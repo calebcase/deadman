@@ -1,0 +1,46 @@
+#!/bin/bash
+set -euo pipefail
+
+mkdir -p ~/.deadman
+touch ~/.deadman/unlock.log
+
+trap 'pkill -P $$' exit
+
+# This really shouldn't be needed, but for whatever reason I can't seem to
+# locate where in my PAM auth logs the mate-screensaver logins are logged...
+# The better method would be to check lastlog.
+dbus-monitor --session "type='signal',interface='org.mate.ScreenSaver'" |
+  while read line; do
+    case "$line" in
+      *'boolean false'*)
+        date >> ~/.deadman/unlock.log
+        ;;
+    esac
+  done &
+
+MAX_LAST_UNLOCK_DELTA=$((60 * 60 * 24))
+
+while true; do
+  last_unlock_str=$(tail -n 1 ~/.deadman/unlock.log)
+  last_unlock=$(date -d "$last_unlock_str" +%s)
+
+  last_login_str=$(last -1 -R --time-format iso $USER | head -n 1 | awk '{print $3}')
+  last_login=$(date -d "$last_login_str" +%s)
+
+  last_auth=$(sort -n <<EOF | tail -n 1
+$last_unlock
+$last_login
+EOF
+  )
+
+  now=$(date +%s)
+  delta=$((now - last_auth))
+
+  if ((delta > MAX_LAST_UNLOCK_DELTA)); then
+    msg="Last unlock was more than $delta seconds ago! Shut. It. Down."
+    printf '%s\n' "$msg"
+    shutdown +1 "$msg"
+  fi
+
+  sleep 120
+done | ts | tee -a ~/.deadman/log

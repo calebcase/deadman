@@ -1,0 +1,21 @@
+#!/bin/bash
+set -euo pipefail
+
+# Primary user who is runing the deadman.
+USER=your-username-here
+
+# The longest we will go without waking up and checking the deadman.
+MAX_SLEEP=$((60 * 60 * 24))
+
+case $1 in
+  pre)
+    last_unlock=$(date -d "$(tail -n 1 /home/$USER/.deadman/unlock.log)" +%s)
+    wake_at=$((last_unlock + MAX_SLEEP))
+    printf 'Forcing wake up at %s (in %d seconds).\n' "$(date -d "@$wake_at")" "$MAX_SLEEP"
+    rtcwake -m no -t "$wake_at"
+    rtcwake -m show
+    ;;
+  post)
+    rtcwake -m disable
+    ;;
+esac
